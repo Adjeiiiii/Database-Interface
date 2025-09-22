@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: phil_project_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: phil_project
+      MYSQL_USER: phil_user
+      MYSQL_PASSWORD: phil_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./seed_data.sql:/docker-entrypoint-initdb.d/02-seed.sql
+    networks:
+      - phil_network
+
+  backend:
+    build: .
+    container_name: phil_project_backend
+    restart: always
+    ports:
+      - "5001:5000"
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: password
+      DB_NAME: phil_project
+    depends_on:
+      - mysql
+    networks:
+      - phil_network
+    volumes:
+      - .:/app
+
+
+networks:
+  phil_network:
+    driver: bridge

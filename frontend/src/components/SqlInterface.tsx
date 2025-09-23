@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { sqlApi, type SqlResponse } from '../api/sqlApi';
 import SqlEditor from './SqlEditor';
 import SqlResult from './SqlResult';
+import ReportingDashboard from './ReportingDashboard';
+import NewPurchaseDropdown from './NewPurchaseDropdown';
 import { formatSql } from '../utils/sqlFormatter';
 
 interface SqlInterfaceProps {}
@@ -11,7 +13,7 @@ const SqlInterface: React.FC<SqlInterfaceProps> = () => {
   const [result, setResult] = useState<SqlResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [tables, setTables] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<'query' | 'tables'>('query');
+  const [activeTab, setActiveTab] = useState<'query' | 'tables' | 'dashboard'>('query');
 
   console.log('SqlInterface component rendered');
 
@@ -234,6 +236,7 @@ ORDER BY
             gap: '10px',
             justifyContent: 'center',
             alignItems: 'center',
+            position: 'relative',
           }}
         >
           <button
@@ -268,6 +271,35 @@ ORDER BY
           >
             Tables ({tables.length})
           </button>
+          <button
+            style={{
+              padding: '12px 24px',
+              border: '2px solid #007bff',
+              background: activeTab === 'dashboard' ? '#007bff' : 'white',
+              color: activeTab === 'dashboard' ? 'white' : '#007bff',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '16px',
+              fontWeight: '500',
+              transition: 'all 0.3s ease',
+            }}
+            onClick={() => setActiveTab('dashboard')}
+          >
+            📊 Analytics
+          </button>
+          
+          {/* New Purchase Dropdown */}
+          <div style={{ position: 'absolute', right: '0', top: '0' }}>
+            <NewPurchaseDropdown onPurchaseComplete={() => {
+              // Refresh tables and dashboard data when a new purchase is made
+              loadTables();
+              if (activeTab === 'dashboard') {
+                // Trigger dashboard refresh by changing tab and back
+                setActiveTab('query');
+                setTimeout(() => setActiveTab('dashboard'), 100);
+              }
+            }} />
+          </div>
         </div>
       </div>
 
@@ -478,6 +510,20 @@ ORDER BY
               <TableCard key={table} tableName={table} />
             ))}
           </div>
+        </div>
+      )}
+
+      {activeTab === 'dashboard' && (
+        <div
+          style={{
+            backgroundColor: 'white',
+            borderRadius: '12px',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+            border: '1px solid #e1e5e9',
+            overflow: 'hidden',
+          }}
+        >
+          <ReportingDashboard />
         </div>
       )}
     </div>

@@ -240,6 +240,246 @@ def is_safe_query(query):
     
     return True
 
+@app.route('/api/purchase/create', methods=['POST'])
+def create_purchase():
+    """Create a new purchase/order"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No data provided',
+                'message': 'Please provide purchase data in the request body'
+            }), 400
+        
+        # Validate required fields
+        required_fields = ['customerid', 'productid', 'quantity', 'unitprice']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    'success': False,
+                    'error': f'Missing required field: {field}',
+                    'message': f'Please provide {field} in the request body'
+                }), 400
+        
+        customerid = data['customerid']
+        productid = data['productid']
+        quantity = data['quantity']
+        unitprice = data['unitprice']
+        notes = data.get('notes', '')
+        
+        # Validate data types and values
+        try:
+            customerid = int(customerid)
+            productid = int(productid)
+            quantity = int(quantity)
+            unitprice = float(unitprice)
+        except (ValueError, TypeError):
+            return jsonify({
+                'success': False,
+                'error': 'Invalid data types',
+                'message': 'Please provide valid numeric values for customerid, productid, quantity, and unitprice'
+            }), 400
+        
+        if quantity <= 0:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid quantity',
+                'message': 'Quantity must be greater than 0'
+            }), 400
+        
+        if unitprice < 0:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid unit price',
+                'message': 'Unit price must be greater than or equal to 0'
+            }), 400
+        
+        # Check if customer exists
+        customer_check = db.session.execute(text("SELECT customerid FROM customer WHERE customerid = :customerid"), 
+                                          {'customerid': customerid})
+        if not customer_check.fetchone():
+            return jsonify({
+                'success': False,
+                'error': 'Customer not found',
+                'message': f'Customer with ID {customerid} does not exist'
+            }), 400
+        
+        # Check if product exists and has enough stock
+        product_check = db.session.execute(text("""
+            SELECT productname, quantityonhand, unitprice 
+            FROM product 
+            WHERE productid = :productid
+        """), {'productid': productid})
+        product_result = product_check.fetchone()
+        
+        if not product_result:
+            return jsonify({
+                'success': False,
+                'error': 'Product not found',
+                'message': f'Product with ID {productid} does not exist'
+            }), 400
+        
+        if product_result[1] < quantity:  # quantityonhand < requested quantity
+            return jsonify({
+                'success': False,
+                'error': 'Insufficient stock',
+                'message': f'Only {product_result[1]} units available for {product_result[0]}'
+            }), 400
+        
+        # Calculate total amount
+        total_amount = quantity * unitprice
+        
+        # Create the order
+        order_query = text("""
+            INSERT INTO orders (customerid, totalamount, status, orderdate, notes) 
+            VALUES (:customerid, :totalamount, 'PENDING', CURDATE(), :notes)
+        """)
+        
+        result = db.session.execute(order_query, {
+            'customerid': customerid,
+            'totalamount': total_amount,
+            'notes': notes
+        })
+        
+        # Get the new order ID
+        order_id = result.lastrowid
+        
+        # Update product stock (reduce quantity)
+        update_stock_query = text("""
+            UPDATE product 
+            SET quantityonhand = quantityonhand - :quantity 
+            WHERE productid = :productid
+        """)
+        
+        db.session.execute(update_stock_query, {
+            'quantity': quantity,
+            'productid': productid
+        })
+        
+        # Commit the transaction
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Purchase created successfully',
+            'order_id': order_id,
+            'total_amount': total_amount,
+            'product_name': product_result[0],
+            'quantity': quantity,
+            'unit_price': unitprice
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'message': 'Failed to create purchase'
+        }), 500
+
+@app.route('/api/customer/create', methods=['POST'])
+def create_customer():
+    """Create a new customer"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No data provided',
+                'message': 'Please provide customer data in the request body'
+            }), 400
+        
+        # Validate required fields
+        required_fields = ['firstname', 'lastname', 'email']
+        for field in required_fields:
+            if field not in data or not data[field].strip():
+                return jsonify({
+                    'success': False,
+                    'error': f'Missing required field: {field}',
+                    'message': f'Please provide {field}'
+                }), 400
+        
+        firstname = data['firstname'].strip()
+        lastname = data['lastname'].strip()
+        email = data['email'].strip()
+        businessname = data.get('businessname', '').strip() or None
+        phone = data.get('phone', '').strip() or None
+        address = data.get('address', '').strip() or None
+        city = data.get('city', '').strip() or None
+        state = data.get('state', '').strip() or None
+        zipcode = data.get('zipcode', '').strip() or None
+        
+        # Validate email format
+        import re
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, email):
+            return jsonify({
+                'success': False,
+                'error': 'Invalid email format',
+                'message': 'Please provide a valid email address'
+            }), 400
+        
+        # Check if email already exists
+        email_check = db.session.execute(text("SELECT customerid FROM customer WHERE email = :email"), 
+                                       {'email': email})
+        if email_check.fetchone():
+            return jsonify({
+                'success': False,
+                'error': 'Email already exists',
+                'message': f'Customer with email {email} already exists'
+            }), 400
+        
+        # Create the customer
+        customer_query = text("""
+            INSERT INTO customer (firstname, lastname, businessname, email, phone, address, city, state, zipcode, joindate) 
+            VALUES (:firstname, :lastname, :businessname, :email, :phone, :address, :city, :state, :zipcode, CURDATE())
+        """)
+        
+        result = db.session.execute(customer_query, {
+            'firstname': firstname,
+            'lastname': lastname,
+            'businessname': businessname,
+            'email': email,
+            'phone': phone,
+            'address': address,
+            'city': city,
+            'state': state,
+            'zipcode': zipcode
+        })
+        
+        # Get the new customer ID
+        customer_id = result.lastrowid
+        
+        # Commit the transaction
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Customer created successfully',
+            'customer_id': customer_id,
+            'customer': {
+                'customerid': customer_id,
+                'firstname': firstname,
+                'lastname': lastname,
+                'businessname': businessname,
+                'email': email,
+                'phone': phone,
+                'address': address,
+                'city': city,
+                'state': state,
+                'zipcode': zipcode
+            }
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'message': 'Failed to create customer'
+        }), 500
+
 if __name__ == '__main__':
     # Create database if it doesn't exist
     create_database_if_not_exists()

@@ -1,0 +1,17 @@
+## Summary
+
+Adds the initial GitHub Actions workflow required for branch protection.
+
+## Checks added
+
+- build
+- test
+- lint
+
+## Notes
+
+These are placeholder checks for the initial repository setup. They will be replaced with real application checks after the project dependencies are synchronized.
+
+## Ticket
+
+TICKET-ADV001
